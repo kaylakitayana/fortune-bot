@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Fortune AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="font-family: Arial; max-width: 700px; margin: 40px auto;">
+
+  <h2>Fortune AI</h2>
+  <p>Ask your question below. Please include the lot number, for example: Lot 12 or 第12签。</p>
+
+  <textarea id="question" rows="5" style="width:100%;"></textarea>
+  <br><br>
+  <button id="askBtn" type="button">Ask</button>
+
+  <p id="remaining"></p>
+  <div id="answer" style="margin-top:20px; white-space: pre-wrap;"></div>
+
+  <div id="paymentBox" style="display:none; margin-top:20px; border:1px solid #ccc; padding:16px;">
+    <h3>Free limit reached</h3>
+    <p>Please make payment to continue.</p>
+    <p><a id="payLink" href="#" target="_blank">Open payment link</a></p>
+    <img id="payQr" src="/payment-qr" width="220">
+  </div>
+
+  <script>
+    let sessionId = localStorage.getItem("session_id");
+    if (!sessionId || sessionId === "null") {
+      sessionId = null;
+    }
+
+    async function askQuestion() {
+      const question = document.getElementById("question").value.trim();
+      if (!question) {
+        alert("Please type a question first.");
+        return;
+      }
+
+      document.getElementById("answer").innerText = "Thinking...";
+      document.getElementById("askBtn").disabled = true;
+
+      try {
+        const response = await fetch("/ask", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            question: question,
+            session_id: sessionId
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.session_id) {
+          sessionId = data.session_id;
+          localStorage.setItem("session_id", sessionId);
+        }
+
+        if (data.ok) {
+          document.getElementById("answer").innerText = data.answer;
+          document.getElementById("remaining").innerText =
+            "Remaining free questions: " + data.remaining;
+          document.getElementById("paymentBox").style.display = "none";
+        } else {
+          document.getElementById("answer").innerText = data.message;
+          document.getElementById("remaining").innerText = "Remaining free questions: 0";
+          document.getElementById("paymentBox").style.display = "block";
+          document.getElementById("payLink").href = data.payment_link;
+        }
+      } catch (e) {
+        document.getElementById("answer").innerText = "Error: " + e;
+      } finally {
+        document.getElementById("askBtn").disabled = false;
+      }
+    }
+
+    document.getElementById("askBtn").addEventListener("click", askQuestion);
+  </script>
+
+</body>
+</html>

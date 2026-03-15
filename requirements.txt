@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic
+requests
+qrcode[pil]
+python-multipart
+python-dotenv
+
+telethon
+keyboard
+colorama
+pyfiglet
