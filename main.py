@@ -193,17 +193,17 @@ def ask(body: AskBody):
             "remaining": free_limit - used
         })
 
-except requests.exceptions.RequestException:
-    return JSONResponse({
-        "ok": False,
-        "message": "The reading service is busy right now. Please try again in a moment."
-    }, status_code=500)
+    except requests.exceptions.RequestException:
+        return JSONResponse({
+            "ok": False,
+            "message": "The reading service is busy right now. Please try again in a moment."
+        }, status_code=500)
 
-except Exception:
-    return JSONResponse({
-        "ok": False,
-        "message": "Something went wrong. Please try again shortly."
-    }, status_code=500)
+    except Exception:
+        return JSONResponse({
+            "ok": False,
+            "message": "Something went wrong. Please try again shortly."
+        }, status_code=500)
 
 @app.get("/payment-qr")
 def payment_qr():
