@@ -193,11 +193,6 @@ def ask(body: AskBody):
             "remaining": free_limit - used
         })
 
-    except requests.exceptions.RequestException:
-        return JSONResponse({
-            "ok": False,
-            "message": "The reading service is busy right now. Please try again in a moment."
-        }, status_code=500)
 
     except Exception:
         return JSONResponse({
