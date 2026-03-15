@@ -120,6 +120,12 @@ def home():
     with open("index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "service": "fortune-bot"
+    }
 
 @app.post("/ask")
 def ask(body: AskBody):
