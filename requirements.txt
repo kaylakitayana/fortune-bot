@@ -5,7 +5,6 @@ requests
 qrcode[pil]
 python-multipart
 python-dotenv
-
 telethon
 keyboard
 colorama

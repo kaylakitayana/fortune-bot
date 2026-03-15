@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import re
 import uuid
 import qrcode
@@ -11,8 +12,10 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "llama3.2:3b"
+APP_ENV = os.getenv("APP_ENV", "production")
+MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "openai")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 usage_store = {}
 
@@ -28,8 +31,6 @@ def load_knowledge():
 
 
 def find_lot_from_question(question, lots):
-    import re
-
     print("QUESTION RECEIVED:", repr(question))
 
     m = re.search(r"(\d{1,3})", question)
@@ -61,20 +62,6 @@ def find_lot_from_question(question, lots):
             return lot
 
     print("NO MATCHING LOT IN JSON")
-    return None
-
-    num = str(int(match.group(1)))
-
-    for lot in lots:
-        candidates = [
-            str(lot.get("lot_number", "")).strip(),
-            str(lot.get("Lot number", "")).strip(),
-            str(lot.get("lot_no", "")).strip(),
-            str(lot.get("id", "")).replace("lot_", "").strip()
-        ]
-        if num in candidates:
-            return lot
-
     return None
 
 
@@ -115,17 +102,22 @@ Instructions:
 - Keep the answer under 100 words.
 """.strip()
 
+
 @app.get("/", response_class=HTMLResponse)
 def home():
     with open("index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
-        "service": "fortune-bot"
+        "service": "fortune-bot",
+        "provider": MODEL_PROVIDER,
+        "model": MODEL_NAME,
     }
+
 
 @app.post("/ask")
 def ask(body: AskBody):
@@ -161,18 +153,34 @@ def ask(body: AskBody):
 
         prompt = build_prompt(body.question, lot, data["system_style"])
 
+        if MODEL_PROVIDER != "openai":
+            return JSONResponse({
+                "ok": False,
+                "message": "MODEL_PROVIDER must be 'openai' on Render."
+            }, status_code=500)
+
+        if not OPENAI_API_KEY:
+            return JSONResponse({
+                "ok": False,
+                "message": "OPENAI_API_KEY is missing."
+            }, status_code=500)
+
         response = requests.post(
-            OLLAMA_URL,
+            "https://api.openai.com/v1/responses",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
             json={
                 "model": MODEL_NAME,
-                "prompt": prompt,
-                "stream": False
+                "input": prompt
             },
             timeout=60
         )
-
         response.raise_for_status()
-        result = response.json().get("response", "")
+
+        data_json = response.json()
+        result = data_json["output"][0]["content"][0]["text"]
 
         used += 1
         usage_store[session_id] = used
@@ -195,6 +203,7 @@ def ask(body: AskBody):
             "ok": False,
             "message": f"Server error: {str(e)}"
         }, status_code=500)
+
 
 @app.get("/payment-qr")
 def payment_qr():
