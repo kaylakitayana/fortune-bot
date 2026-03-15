@@ -129,59 +129,72 @@ def health():
 
 @app.post("/ask")
 def ask(body: AskBody):
-    data = load_knowledge()
-    free_limit = data["free_limit"]
+    try:
+        data = load_knowledge()
+        free_limit = data["free_limit"]
 
-    session_id = body.session_id
-    if not session_id or session_id == "null":
-        session_id = str(uuid.uuid4())
+        session_id = body.session_id
+        if not session_id or session_id == "null":
+            session_id = str(uuid.uuid4())
 
-    used = usage_store.get(session_id, 0)
+        used = usage_store.get(session_id, 0)
 
-    if used >= free_limit:
-        return JSONResponse({
-            "ok": False,
-            "message": "Free question limit reached.",
-            "session_id": session_id,
-            "payment_link": data["payment_link"],
-            "remaining": 0
-        })
+        if used >= free_limit:
+            return JSONResponse({
+                "ok": False,
+                "message": "Free question limit reached.",
+                "session_id": session_id,
+                "payment_link": data["payment_link"],
+                "remaining": 0
+            })
 
-    lots = data.get("divination_lots", [])
-    lot = find_lot_from_question(body.question, lots)
+        lots = data.get("divination_lots", [])
+        lot = find_lot_from_question(body.question, lots)
 
-    if not lot:
+        if not lot:
+            return JSONResponse({
+                "ok": True,
+                "answer": "Please include the lot number, for example: Lot 12 or 第12签。",
+                "session_id": session_id,
+                "remaining": free_limit - used
+            })
+
+        prompt = build_prompt(body.question, lot, data["system_style"])
+
+        response = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": MODEL_NAME,
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=60
+        )
+
+        response.raise_for_status()
+        result = response.json().get("response", "")
+
+        used += 1
+        usage_store[session_id] = used
+
         return JSONResponse({
             "ok": True,
-            "answer": "Please include the lot number, for example: Lot 12 or 第12签。",
+            "answer": result,
             "session_id": session_id,
             "remaining": free_limit - used
         })
 
-    prompt = build_prompt(body.question, lot, data["system_style"])
+    except requests.exceptions.RequestException as e:
+        return JSONResponse({
+            "ok": False,
+            "message": f"Model connection failed: {str(e)}"
+        }, status_code=500)
 
-    response = requests.post(
-        OLLAMA_URL,
-        json={
-            "model": MODEL_NAME,
-            "prompt": prompt,
-            "stream": False
-        },
-        timeout=60
-    )
-
-    result = response.json().get("response", "")
-
-    used += 1
-    usage_store[session_id] = used
-
-    return JSONResponse({
-        "ok": True,
-        "answer": result,
-        "session_id": session_id,
-        "remaining": free_limit - used
-    })
-
+    except Exception as e:
+        return JSONResponse({
+            "ok": False,
+            "message": f"Server error: {str(e)}"
+        }, status_code=500)
 
 @app.get("/payment-qr")
 def payment_qr():
