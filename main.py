@@ -9,6 +9,12 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
+# ✅ REQUIRED FOR RENDER HEALTH CHECK
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 session_store = {}
 
 class AskBody(BaseModel):
@@ -50,6 +56,7 @@ def home():
         return HTMLResponse(f.read())
 
 
+# ✅ SERVE YOUR REAL QR CODES
 @app.get("/paynow-qr")
 def paynow():
     return FileResponse("PayNow.jpeg")
@@ -60,6 +67,7 @@ def paylah():
     return FileResponse("PayLah.jpeg")
 
 
+# ✅ UNLOCK +10 QUESTIONS AFTER PAYMENT
 @app.post("/unlock")
 def unlock(body: dict):
     session = get_session(body["session_id"])
@@ -67,6 +75,7 @@ def unlock(body: dict):
     return {"ok": True}
 
 
+# ✅ MAIN QUESTION ENDPOINT
 @app.post("/ask")
 def ask(body: AskBody):
 
@@ -79,6 +88,7 @@ def ask(body: AskBody):
     used = session["used"]
     total_allowed = free_limit + session["paid"]
 
+    # 🚫 BLOCK WHEN LIMIT REACHED
     if used >= total_allowed:
         return JSONResponse({
             "ok": False,
@@ -92,6 +102,7 @@ def ask(body: AskBody):
     lot_number = extract_lot_number(body.question)
     lot = find_lot(lot_number, lots)
 
+    # ❗ If no lot detected
     if not lot:
         return {
             "ok": True,
@@ -100,6 +111,7 @@ def ask(body: AskBody):
             "remaining": total_allowed - used
         }
 
+    # 🔮 Simple response (can upgrade later)
     answer = lot["interpretation_en"]
 
     session["used"] += 1
