@@ -10,7 +10,7 @@
   <h2>Fortune AI</h2>
 
   <p style="color:#555;">
-    Ask your question + lot number (1–100)
+    Ask your question below. Please include the lot number (choose between 1-100), for example: How is my work fortune for this week? Lot 12 or 我这周的运势如何？ 第12签。
   </p>
 
   <div id="chat" style="margin:20px 0;"></div>
@@ -65,6 +65,8 @@ function appendMessage(sender, text) {
 
   const div = document.createElement("div");
   div.style.marginBottom = "10px";
+
+  // ORIGINAL STYLE
   div.innerText = sender + ": " + text;
 
   chat.appendChild(div);

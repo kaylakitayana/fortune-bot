@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# ✅ Render health check
+# Render health check
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -50,46 +50,33 @@ def find_lot(lot_number, lots):
 
 
 def generate_fortune_response(lot, question, history):
+
     grade = lot.get("grade", "")
-    text = lot.get("interpretation_en", "")
 
-    # Tone by grade
+    # Tone logic (concise)
     if grade == "上":
-        tone = "A very favorable sign reveals itself."
-        advice = "This is a time to move forward with confidence. What you seek is aligning in your favor."
+        tone = "A favorable sign appears."
+        advice = "Move forward with confidence."
     elif grade == "中":
-        tone = "The path ahead is steady, though it requires patience."
-        advice = "Stay grounded. Progress will come gradually, and persistence will bring results."
+        tone = "The situation is steady."
+        advice = "Stay patient and consistent."
     else:
-        tone = "The signs suggest a need for caution."
-        advice = "Do not rush. Take a step back and observe carefully before making decisions."
+        tone = "Caution is advised."
+        advice = "Avoid rushing decisions."
 
-    # Context awareness (follow-up feeling)
-    if len(history) > 0:
-        follow = "From what has already been revealed, the situation is still unfolding."
-    else:
-        follow = "This is the initial insight into your situation."
+    # Follow-up awareness
+    follow = "The situation is still unfolding." if history else "This is your initial insight."
 
-    # Light personalization
+    # Context awareness
     q = question.lower()
     if "work" in q:
-        focus = "In your work matters, remain steady and avoid unnecessary conflict."
+        focus = "In work matters, stay steady and avoid conflict."
     elif "love" in q or "relationship" in q:
-        focus = "In matters of the heart, patience and understanding will guide you best."
+        focus = "In relationships, be patient and communicate clearly."
     else:
-        focus = "In your current situation, balance action with careful thought."
+        focus = "Balance your actions with careful thinking."
 
-    return f"""
-{tone}
-
-{follow}
-
-{focus}
-
-{advice}
-
-Trust the timing of events. What is meant to unfold will reveal itself in due course.
-""".strip()
+    return f"{tone} {follow} {focus} {advice} Trust the timing of events."
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -130,7 +117,7 @@ def ask(body: AskBody):
     if used >= total_allowed:
         return JSONResponse({
             "ok": False,
-            "message": "Your current reading has reached its limit. Please unlock more questions to continue.",
+            "message": "Your reading limit is reached. Please unlock more questions.",
             "session_id": session_id,
             "remaining": 0
         })
@@ -139,7 +126,6 @@ def ask(body: AskBody):
 
     lot_number = extract_lot_number(body.question)
 
-    # ✅ If user provides new lot → update
     if lot_number:
         lot = find_lot(lot_number, lots)
         if lot:
@@ -147,29 +133,21 @@ def ask(body: AskBody):
     else:
         lot = session.get("current_lot")
 
-    # ❗ Force lot if none exists at all
     if not lot:
         return {
             "ok": True,
-            "answer": "Please include your lot number (1–100) so the reading can be interpreted.",
+            "answer": "Ask your question below. Please include the lot number (choose between 1-100), for example: How is my work fortune for this week? Lot 12 or 我这周的运势如何？ 第12签。",
             "session_id": session_id,
             "remaining": total_allowed - used
         }
 
-    # 🔮 Generate response with memory
-    answer = generate_fortune_response(
-        lot,
-        body.question,
-        session["history"]
-    )
+    answer = generate_fortune_response(lot, body.question, session["history"])
 
-    # Save history
     session["history"].append({
         "q": body.question,
         "a": answer
     })
 
-    # keep last 10 messages
     session["history"] = session["history"][-10:]
 
     session["used"] += 1
