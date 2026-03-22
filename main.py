@@ -147,7 +147,7 @@ def ask(body: AskBody):
         if not lot:
             return JSONResponse({
                 "ok": True,
-                "answer": "Ask your question below. Please include the lot number, for example: How is my work fortune for this week? Lot 12 or 我这周的运势如何？ 第12签。",
+                "answer": "Ask your question below. Please include 1 lot number (choose between Lot 1 to Lot 100), for example: How is my work fortune for this week? Lot 12 or 我这周的运势如何？ 第12签。",
                 "session_id": session_id,
                 "remaining": free_limit - used
             })
