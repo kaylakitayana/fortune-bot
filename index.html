@@ -4,23 +4,53 @@
   <title>Fortune AI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
-<body style="font-family: Arial; max-width: 700px; margin: 40px auto;">
+<body style="font-family: Arial, sans-serif; max-width: 760px; margin: 30px auto; padding: 0 16px; background: #fafafa;">
 
-  <h2>Fortune AI</h2>
-  <p>Ask your question below. Please include 1 lot number (choose between Lot 1 to Lot 100), for example: How is my work fortune for this week? Lot 12 or 我这周的运势如何？ 第12签。</p>
+  <h2 style="margin-bottom: 8px;">Fortune AI</h2>
+  <p style="color: #555; margin-top: 0;">
+    Ask me your question and include the lot number. For example:
+    <br>
+    <strong>How is my work fortune for this week? Lot 12</strong>
+    <br>
+    <strong>我这周的运势如何？ 第12签</strong>
+  </p>
 
-  <textarea id="question" rows="5" style="width:100%;"></textarea>
-  <br><br>
-  <button id="askBtn" type="button">Ask</button>
+  <div id="chat" style="margin-top: 20px; margin-bottom: 18px;"></div>
 
-  <p id="remaining"></p>
-  <div id="answer" style="margin-top:20px; white-space: pre-wrap;"></div>
+  <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+    <textarea
+      id="question"
+      rows="4"
+      placeholder="Type your question here..."
+      style="flex: 1; width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 12px; resize: vertical; font-size: 15px;"
+    ></textarea>
+  </div>
 
-  <div id="paymentBox" style="display:none; margin-top:20px; border:1px solid #ccc; padding:16px;">
-    <h3>Free limit reached</h3>
+  <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+    <button
+      id="askBtn"
+      type="button"
+      style="padding: 10px 18px; border: none; border-radius: 10px; cursor: pointer; background: black; color: white; font-size: 14px;"
+    >
+      Ask
+    </button>
+
+    <button
+      id="clearBtn"
+      type="button"
+      style="padding: 10px 18px; border: 1px solid #ccc; border-radius: 10px; cursor: pointer; background: white; font-size: 14px;"
+    >
+      New Reading
+    </button>
+
+    <p id="remaining" style="margin: 0; color: #555;"></p>
+  </div>
+
+  <div id="paymentBox" style="display:none; margin-top:20px; border:1px solid #ccc; border-radius: 12px; padding:16px; background: white;">
+    <h3 style="margin-top: 0;">Free limit reached</h3>
     <p>Please make payment to continue.</p>
     <p><a id="payLink" href="#" target="_blank">Open payment link</a></p>
-    <img id="payQr" src="/payment-qr" width="220">
+    <img id="payQr" src="/payment-qr" width="220" alt="Payment QR">
   </div>
 
   <script>
@@ -29,15 +59,56 @@
       sessionId = null;
     }
 
+    function appendMessage(sender, text) {
+      const chat = document.getElementById("chat");
+      const wrapper = document.createElement("div");
+      wrapper.style.display = "flex";
+      wrapper.style.marginBottom = "12px";
+      wrapper.style.justifyContent = sender === "user" ? "flex-end" : "flex-start";
+
+      const bubble = document.createElement("div");
+      bubble.style.maxWidth = "85%";
+      bubble.style.padding = "12px 14px";
+      bubble.style.borderRadius = "14px";
+      bubble.style.whiteSpace = "pre-wrap";
+      bubble.style.lineHeight = "1.5";
+      bubble.style.fontSize = "15px";
+      bubble.style.boxShadow = "0 1px 3px rgba(0,0,0,0.08)";
+      bubble.style.background = sender === "user" ? "#111" : "#fff";
+      bubble.style.color = sender === "user" ? "#fff" : "#222";
+      bubble.style.border = sender === "user" ? "none" : "1px solid #e5e5e5";
+
+      bubble.innerText = text;
+      wrapper.appendChild(bubble);
+      chat.appendChild(wrapper);
+
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+
+    function clearChat() {
+      document.getElementById("chat").innerHTML = "";
+      document.getElementById("question").value = "";
+      document.getElementById("answer").innerText = "";
+      document.getElementById("paymentBox").style.display = "none";
+    }
+
     async function askQuestion() {
-      const question = document.getElementById("question").value.trim();
+      const questionInput = document.getElementById("question");
+      const question = questionInput.value.trim();
+
       if (!question) {
         alert("Please type a question first.");
         return;
       }
 
-      document.getElementById("answer").innerText = "Thinking...";
-      document.getElementById("askBtn").disabled = true;
+      appendMessage("user", question);
+
+      const askBtn = document.getElementById("askBtn");
+      askBtn.disabled = true;
+      askBtn.innerText = "Thinking...";
 
       try {
         const response = await fetch("/ask", {
@@ -59,25 +130,39 @@
         }
 
         if (data.ok) {
-          document.getElementById("answer").innerText = data.answer;
+          appendMessage("bot", data.answer);
           document.getElementById("remaining").innerText =
             "Remaining free questions: " + data.remaining;
           document.getElementById("paymentBox").style.display = "none";
+          questionInput.value = "";
+          questionInput.focus();
         } else {
-          document.getElementById("answer").innerText = data.message;
-          document.getElementById("remaining").innerText = "Remaining free questions: 0";
+          appendMessage("bot", data.message);
+          document.getElementById("remaining").innerText =
+            "Remaining free questions: 0";
           document.getElementById("paymentBox").style.display = "block";
           document.getElementById("payLink").href = data.payment_link;
         }
       } catch (e) {
-        document.getElementById("answer").innerText = "Error: " + e;
+        appendMessage("bot", "Something went wrong. Please try again.");
       } finally {
-        document.getElementById("askBtn").disabled = false;
+        askBtn.disabled = false;
+        askBtn.innerText = "Ask";
       }
     }
 
     document.getElementById("askBtn").addEventListener("click", askQuestion);
+    document.getElementById("clearBtn").addEventListener("click", clearChat);
+
+    document.getElementById("question").addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        askQuestion();
+      }
+    });
   </script>
+
+  <div id="answer" style="display:none;"></div>
 
 </body>
 </html>
