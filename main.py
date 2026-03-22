@@ -161,7 +161,7 @@ Text:
 """.strip()
 
 
-def build_reading_prompt(question, lot, system_style, history_text, explicit_lot_in_message):
+def build_reading_prompt(question, question_lang, lot, system_style, history_text, explicit_lot_in_message):
     lot_number = lot.get("lot_number") or lot.get("Lot number") or lot.get("id", "")
     grade = (
         lot.get("grade")
@@ -176,6 +176,12 @@ def build_reading_prompt(question, lot, system_style, history_text, explicit_lot
         f"The user explicitly mentioned Lot {lot_number} in the latest message."
         if explicit_lot_in_message
         else f"The user did not repeat the lot number. Continue the ongoing reading using Lot {lot_number} unless the user clearly changes it."
+    )
+
+    language_rule = (
+        "The user wrote in Chinese. You must answer fully in natural Chinese only. Do not answer in English."
+        if question_lang == "zh"
+        else "The user wrote in English. You must answer fully in natural English only. Do not answer in Chinese."
     )
 
     return f"""
@@ -198,8 +204,10 @@ Important writing behavior:
 - Do not always begin in the same way.
 - Sometimes be gentle and direct, sometimes more lyrical, sometimes more grounded and practical.
 - Keep the tone aligned with the user's question and the omen.
-- Sound like the examples: thoughtful, flowing, natural, and personal.
 - Avoid repeating stock phrases every time.
+
+Critical language rule:
+{language_rule}
 
 Translation behavior:
 - If the user asks to translate, translate the previous reading faithfully into the requested language.
@@ -225,8 +233,8 @@ Instructions:
 - If the omen is mixed or difficult, explain it gently and give wise next steps.
 - Keep the reading practical, emotionally comforting, and natural.
 - End with a short closing line of guidance or blessing.
-- If the user writes in English, answer in English.
-- If the user writes in Chinese, answer in Chinese.
+- If the user writes in Chinese, answer only in Chinese.
+- If the user writes in English, answer only in English.
 - Keep the reply concise but complete, usually around 90 to 170 words.
 """.strip()
 
@@ -376,6 +384,8 @@ def ask(body: AskBody):
             lot = session.get("current_lot")
 
         if not lot:
+            if question_lang == "zh":
+                instruction_text = "请在问题中注明签号（1到100），例如：我这周的运势如何？ 第12签。"
             return {
                 "ok": True,
                 "answer": instruction_text,
@@ -387,6 +397,7 @@ def ask(body: AskBody):
 
         prompt = build_reading_prompt(
             question=question,
+            question_lang=question_lang,
             lot=lot,
             system_style=data["system_style"],
             history_text=history_text,
