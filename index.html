@@ -4,201 +4,284 @@
   <title>Fortune AI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
+<body style="font-family: Arial, sans-serif; max-width: 760px; margin: 12px auto; padding: 0 8px; background: #f3f3f3; color: #222;">
 
-<body style="font-family: Arial, sans-serif; max-width: 760px; margin: 30px auto; padding: 0 16px; background: #fafafa;">
+  <h1 style="margin: 0 0 8px 0; font-size: 24px;">Fortune AI</h1>
 
-  <h2 style="margin-bottom: 8px;">Fortune AI</h2>
-
-  <p style="color:#555; margin-top:0; line-height:1.5;">
-    Ask your question below. Please include the lot number (choose between 1-100), for example:
+  <p style="margin: 0 0 14px 0; color: #444; line-height: 1.35;">
+    Ask your question below. Please include the lot number (choose between 1-100), for example: 
     <br>
     <strong>How is my work fortune for this week? Lot 12</strong>
     <br>
-    <strong>我这周的运势如何？ 第12签。</strong>
+    <strong>我这周的运势如何？ 第12签</strong>
   </p>
 
-  <div id="chat" style="margin:20px 0 18px 0;"></div>
+  <div id="chat" style="margin-bottom: 14px;"></div>
 
   <textarea
     id="question"
     rows="4"
-    placeholder="Type your question..."
-    style="width:100%; padding:12px; border-radius:12px; border:1px solid #ccc; resize:vertical; font-size:15px; box-sizing:border-box;"
+    placeholder="Type your question here..."
+    style="
+      width: 100%;
+      box-sizing: border-box;
+      border: 2px solid #222;
+      border-radius: 16px;
+      padding: 14px;
+      font-size: 16px;
+      resize: vertical;
+      background: white;
+      outline: none;
+    "
   ></textarea>
 
-  <br><br>
-
-  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+  <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px;">
     <button
       id="askBtn"
-      style="padding:10px 18px; border:none; border-radius:10px; cursor:pointer; background:black; color:white; font-size:14px;"
+      type="button"
+      style="
+        background: black;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 16px;
+        font-size: 16px;
+        cursor: pointer;
+      "
     >
       Ask
     </button>
 
     <button
       id="clearBtn"
-      style="padding:10px 18px; border:1px solid #ccc; border-radius:10px; cursor:pointer; background:white; font-size:14px;"
+      type="button"
+      style="
+        background: white;
+        color: #222;
+        border: 1px solid #bbb;
+        border-radius: 10px;
+        padding: 10px 16px;
+        font-size: 16px;
+        cursor: pointer;
+      "
     >
       New Reading
     </button>
 
-    <p id="remaining" style="margin:0; color:#555;"></p>
+    <span id="remaining" style="font-size: 15px; color: #555;"></span>
   </div>
 
-  <div id="paymentBox" style="display:none; margin-top:20px; padding:16px; border:1px solid #ccc; border-radius:12px; background:white;">
-    <h3 style="margin-top:0;">Limit reached</h3>
-    <p style="margin-top:0;">Unlock more questions:</p>
+  <div
+    id="paymentBox"
+    style="
+      display: none;
+      margin-top: 18px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    "
+  >
+    <h3 style="margin-top: 0; margin-bottom: 8px;">Reading limit reached</h3>
+    <p style="margin-top: 0; color: #555;">Please make payment to unlock more questions.</p>
 
-    <div style="display:flex; gap:20px; flex-wrap:wrap;">
-      <div style="text-align:center;">
-        <p style="margin-bottom:8px;"><strong>PayNow</strong></p>
-        <img src="/paynow-qr" width="180" alt="PayNow QR" style="border-radius:8px; border:1px solid #eee;">
+    <div style="display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start;">
+      <div style="text-align: center;">
+        <div style="font-weight: 700; margin-bottom: 8px;">PayNow</div>
+        <img
+          src="/paynow-qr"
+          alt="PayNow QR"
+          width="180"
+          style="border-radius: 10px; border: 1px solid #eee; background: white;"
+        >
       </div>
 
-      <div style="text-align:center;">
-        <p style="margin-bottom:8px;"><strong>PayLah</strong></p>
-        <img src="/paylah-qr" width="180" alt="PayLah QR" style="border-radius:8px; border:1px solid #eee;">
+      <div style="text-align: center;">
+        <div style="font-weight: 700; margin-bottom: 8px;">PayLah</div>
+        <img
+          src="/paylah-qr"
+          alt="PayLah QR"
+          width="180"
+          style="border-radius: 10px; border: 1px solid #eee; background: white;"
+        >
       </div>
     </div>
 
     <button
-      onclick="unlockQuestions()"
-      style="margin-top:15px; padding:10px 18px; border:none; border-radius:10px; cursor:pointer; background:black; color:white;"
+      id="unlockBtn"
+      type="button"
+      style="
+        margin-top: 14px;
+        background: black;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 16px;
+        font-size: 15px;
+        cursor: pointer;
+      "
     >
       I have paid
     </button>
   </div>
 
-<script>
-let sessionId = localStorage.getItem("session_id");
-
-if (!sessionId || sessionId === "null") {
-  sessionId = null;
-}
-
-function appendMessage(sender, text) {
-  const chat = document.getElementById("chat");
-
-  const wrapper = document.createElement("div");
-  wrapper.style.display = "flex";
-  wrapper.style.marginBottom = "12px";
-  wrapper.style.justifyContent = sender === "user" ? "flex-end" : "flex-start";
-
-  const bubble = document.createElement("div");
-  bubble.style.maxWidth = "85%";
-  bubble.style.padding = "12px 14px";
-  bubble.style.borderRadius = "14px";
-  bubble.style.whiteSpace = "pre-wrap";
-  bubble.style.lineHeight = "1.5";
-  bubble.style.fontSize = "15px";
-  bubble.style.boxShadow = "0 1px 3px rgba(0,0,0,0.08)";
-  bubble.style.background = sender === "user" ? "#111" : "#fff";
-  bubble.style.color = sender === "user" ? "#fff" : "#222";
-  bubble.style.border = sender === "user" ? "none" : "1px solid #e5e5e5";
-  bubble.innerText = text;
-
-  wrapper.appendChild(bubble);
-  chat.appendChild(wrapper);
-
-  window.scrollTo({
-    top: document.body.scrollHeight,
-    behavior: "smooth"
-  });
-}
-
-function clearChat() {
-  document.getElementById("chat").innerHTML = "";
-  document.getElementById("question").value = "";
-  document.getElementById("paymentBox").style.display = "none";
-  document.getElementById("remaining").innerText = "";
-}
-
-async function askQuestion() {
-  const questionInput = document.getElementById("question");
-  const q = questionInput.value.trim();
-
-  if (!q) {
-    alert("Please type a question first.");
-    return;
-  }
-
-  appendMessage("user", q);
-
-  const askBtn = document.getElementById("askBtn");
-  askBtn.disabled = true;
-  askBtn.innerText = "Thinking...";
-
-  try {
-    const res = await fetch("/ask", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
-        question: q,
-        session_id: sessionId
-      })
-    });
-
-    const data = await res.json();
-
-    if (data.session_id) {
-      sessionId = data.session_id;
-      localStorage.setItem("session_id", sessionId);
+  <script>
+    let sessionId = localStorage.getItem("session_id");
+    if (!sessionId || sessionId === "null") {
+      sessionId = null;
     }
 
-    if (data.ok) {
-      appendMessage("bot", data.answer);
-      document.getElementById("remaining").innerText =
-        "Remaining: " + data.remaining;
+    function appendMessage(sender, text) {
+      const chat = document.getElementById("chat");
+
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.justifyContent = sender === "user" ? "flex-end" : "flex-start";
+      row.style.marginBottom = "12px";
+
+      const bubble = document.createElement("div");
+      bubble.style.maxWidth = "86%";
+      bubble.style.whiteSpace = "pre-wrap";
+      bubble.style.lineHeight = "1.75";
+      bubble.style.fontSize = "15px";
+      bubble.style.wordBreak = "break-word";
+
+      if (sender === "user") {
+        bubble.style.background = "#000";
+        bubble.style.color = "#fff";
+        bubble.style.padding = "14px 16px";
+        bubble.style.borderRadius = "18px";
+        bubble.style.boxShadow = "0 1px 3px rgba(0,0,0,0.18)";
+      } else {
+        bubble.style.background = "#fff";
+        bubble.style.color = "#222";
+        bubble.style.padding = "16px";
+        bubble.style.borderRadius = "14px";
+        bubble.style.border = "1px solid #ddd";
+        bubble.style.boxShadow = "0 1px 4px rgba(0,0,0,0.08)";
+      }
+
+      bubble.innerText = text;
+      row.appendChild(bubble);
+      chat.appendChild(row);
+
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+
+    async function askQuestion() {
+      const input = document.getElementById("question");
+      const question = input.value.trim();
+
+      if (!question) {
+        alert("Please type a question first.");
+        return;
+      }
+
+      appendMessage("user", question);
+
+      const askBtn = document.getElementById("askBtn");
+      askBtn.disabled = true;
+      askBtn.innerText = "Thinking...";
+
+      try {
+        const res = await fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: question,
+            session_id: sessionId
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.session_id) {
+          sessionId = data.session_id;
+          localStorage.setItem("session_id", sessionId);
+        }
+
+        if (data.ok) {
+          appendMessage("bot", data.answer);
+          document.getElementById("remaining").innerText =
+            "Remaining free questions: " + data.remaining;
+          document.getElementById("paymentBox").style.display = "none";
+          input.value = "";
+          input.focus();
+        } else {
+          appendMessage("bot", data.message);
+          document.getElementById("remaining").innerText =
+            "Remaining free questions: 0";
+          document.getElementById("paymentBox").style.display = "block";
+        }
+      } catch (e) {
+        appendMessage("bot", "Something went wrong. Please try again shortly.");
+      } finally {
+        askBtn.disabled = false;
+        askBtn.innerText = "Ask";
+      }
+    }
+
+    async function newReading() {
+      try {
+        await fetch("/new-reading", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId
+          })
+        });
+      } catch (e) {
+        // ignore
+      }
+
+      document.getElementById("chat").innerHTML = "";
+      document.getElementById("question").value = "";
       document.getElementById("paymentBox").style.display = "none";
-      questionInput.value = "";
-      questionInput.focus();
-    } else {
-      appendMessage("bot", data.message);
-      document.getElementById("remaining").innerText = "Remaining: 0";
-      document.getElementById("paymentBox").style.display = "block";
     }
-  } catch (e) {
-    appendMessage("bot", "Something went wrong. Please try again.");
-  } finally {
-    askBtn.disabled = false;
-    askBtn.innerText = "Ask";
-  }
-}
 
-async function unlockQuestions() {
-  try {
-    const res = await fetch("/unlock", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
-        session_id: sessionId
-      })
+    async function unlockQuestions() {
+      try {
+        const res = await fetch("/unlock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.session_id) {
+          sessionId = data.session_id;
+          localStorage.setItem("session_id", sessionId);
+        }
+
+        if (data.ok) {
+          document.getElementById("paymentBox").style.display = "none";
+          document.getElementById("remaining").innerText =
+            "Remaining free questions: " + data.remaining;
+          alert("Unlocked 10 more questions for SGD 38.");
+        }
+      } catch (e) {
+        alert("Unable to unlock right now. Please try again.");
+      }
+    }
+
+    document.getElementById("askBtn").addEventListener("click", askQuestion);
+    document.getElementById("clearBtn").addEventListener("click", newReading);
+    document.getElementById("unlockBtn").addEventListener("click", unlockQuestions);
+
+    document.getElementById("question").addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        askQuestion();
+      }
     });
-
-    const data = await res.json();
-
-    if (data.ok) {
-      alert("Unlocked 10 questions ✨");
-      document.getElementById("paymentBox").style.display = "none";
-      document.getElementById("remaining").innerText =
-        "Remaining: " + data.remaining;
-    }
-  } catch (e) {
-    alert("Unable to unlock right now. Please try again.");
-  }
-}
-
-document.getElementById("askBtn").onclick = askQuestion;
-document.getElementById("clearBtn").onclick = clearChat;
-
-document.getElementById("question").addEventListener("keydown", function(e) {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    askQuestion();
-  }
-});
-</script>
+  </script>
 
 </body>
 </html>

@@ -1,6 +1,8 @@
 import json
-import uuid
+import os
 import re
+import uuid
+import requests
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -8,11 +10,9 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
+MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "openai")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 session_store = {}
 
@@ -22,7 +22,7 @@ class AskBody(BaseModel):
     session_id: str | None = None
 
 
-class UnlockBody(BaseModel):
+class SessionBody(BaseModel):
     session_id: str | None = None
 
 
@@ -31,15 +31,23 @@ def load_knowledge():
         return json.load(f)
 
 
-def get_session(session_id):
+def get_session(session_id: str):
     if session_id not in session_store:
         session_store[session_id] = {
             "used": 0,
             "paid": 0,
             "history": [],
-            "current_lot": None
+            "current_lot": None,
+            "last_answer": "",
+            "last_language": "en"
         }
     return session_store[session_id]
+
+
+def detect_language(text: str):
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return "zh"
+    return "en"
 
 
 def extract_lot_number(question: str):
@@ -58,58 +66,194 @@ def extract_lot_number(question: str):
     return None
 
 
-def find_lot(lot_number, lots):
+def find_lot_by_number(lot_number, lots):
+    if not lot_number:
+        return None
+
     for lot in lots:
-        if str(lot.get("lot_number")) == str(lot_number):
+        stored_lot_number = str(
+            lot.get("lot_number")
+            or lot.get("Lot number")
+            or lot.get("lot no")
+            or lot.get("lot_no")
+            or ""
+        ).strip()
+
+        lot_id = str(lot.get("id", "")).replace("lot_", "").strip()
+
+        if str(lot_number) == stored_lot_number or str(lot_number) == lot_id:
             return lot
+
     return None
 
 
-def generate_fortune_response(lot, question, history):
-    grade = lot.get("grade", "")
-    zh_text = lot.get("interpretation_zh", "")
-    en_text = lot.get("interpretation_en", "")
+def format_history(history, max_turns=8):
+    recent = history[-max_turns:]
+    lines = []
+    for item in recent:
+        q = item.get("q", "").strip()
+        a = item.get("a", "").strip()
+        if q:
+            lines.append(f"User: {q}")
+        if a:
+            lines.append(f"Reader: {a}")
+    return "\n".join(lines).strip()
 
-    is_chinese = bool(re.search(r"[\u4e00-\u9fff]", question))
-    is_follow_up = len(history) > 0
 
-    q = question.lower()
+def is_translation_request(question: str):
+    q = question.strip().lower()
 
-    if grade == "上":
-        opening_en = "This is a favorable sign."
-        opening_zh = "此签属吉兆。"
-    elif grade == "中":
-        opening_en = "This is a steady sign."
-        opening_zh = "此签属中平之象。"
-    else:
-        opening_en = "This sign calls for caution."
-        opening_zh = "此签提醒你凡事宜谨慎。"
+    english_patterns = [
+        "translate to english",
+        "translate this to english",
+        "please translate to english",
+        "english please",
+        "put this in english"
+    ]
 
-    if "work" in q or "career" in q or "job" in q:
-        focus_en = "In work matters, move steadily, avoid conflict, and let timing work in your favor."
-        focus_zh = "在工作方面，宜稳中求进，避免冲突，顺时而行。"
-    elif "love" in q or "relationship" in q:
-        focus_en = "In matters of the heart, patience and honest communication will help more than force."
-        focus_zh = "在感情方面，耐心与坦诚沟通，比急于推进更有帮助。"
-    elif "money" in q or "wealth" in q or "finance" in q:
-        focus_en = "For financial matters, act prudently, avoid haste, and choose clear opportunities over risky ones."
-        focus_zh = "在财运方面，宜谨慎行事，不可急进，宁取稳健之机。"
-    else:
-        focus_en = "For this matter, balance effort with patience and do not rush what has not yet ripened."
-        focus_zh = "就此事而言，宜在努力中保持耐心，不可操之过急。"
+    chinese_patterns = [
+        "翻译成中文",
+        "翻译成华文",
+        "翻成中文",
+        "中文",
+        "请翻译成中文"
+    ]
 
-    follow_en = "This follows naturally from your earlier reading." if is_follow_up else "This is your first reading for this matter."
-    follow_zh = "这是延续你前面的签意。" if is_follow_up else "这是你此事的初次解读。"
+    for p in english_patterns:
+        if p in q:
+            return "en"
 
-    blessing_en = "Trust the timing of events."
-    blessing_zh = "顺势而行，自有转机。"
+    for p in chinese_patterns:
+        if p in question:
+            return "zh"
 
-    if is_chinese:
-        source_line = zh_text.split("\n")[0] if zh_text else ""
-        return f"{opening_zh}{follow_zh}{focus_zh} 签意提示：{source_line}。{blessing_zh}"
+    return None
 
-    source_line = en_text.split("\n")[0] if en_text else ""
-    return f"{opening_en} {follow_en} {focus_en} The lot points to this image: {source_line}. {blessing_en}"
+
+def build_translation_prompt(target_lang: str, last_answer: str):
+    if target_lang == "en":
+        return f"""
+Translate the following fortune reading into natural, elegant English.
+
+Rules:
+- Keep the meaning faithful.
+- Keep the tone warm, calm, and graceful.
+- Do not add new interpretation.
+- Do not say "translation:".
+- Output only the translated reading.
+
+Text:
+{last_answer}
+""".strip()
+
+    return f"""
+把下面这段签文解读翻译成自然、温和、优雅的中文。
+
+规则：
+- 忠于原意
+- 保留温柔、平静、带有灵性的语气
+- 不要加入新的解释
+- 不要写“翻译如下”
+- 只输出翻译后的内容
+
+内容：
+{last_answer}
+""".strip()
+
+
+def build_reading_prompt(question, lot, system_style, history_text, explicit_lot_in_message):
+    lot_number = lot.get("lot_number") or lot.get("Lot number") or lot.get("id", "")
+    grade = (
+        lot.get("grade")
+        or lot.get("Good/Medium/Bad")
+        or lot.get("Good/ Medium/ Bad Lots indication")
+        or ""
+    )
+    interpretation_en = lot.get("interpretation_en") or lot.get("Interpretation (English)") or ""
+    interpretation_zh = lot.get("interpretation_zh") or lot.get("Interpretation (Chinese)") or ""
+
+    lot_context_line = (
+        f"The user explicitly mentioned Lot {lot_number} in the latest message."
+        if explicit_lot_in_message
+        else f"The user did not repeat the lot number. Continue the ongoing reading using Lot {lot_number} unless the user clearly changes it."
+    )
+
+    return f"""
+{system_style}
+
+You are a traditional temple fortune reader.
+
+Style:
+- warm, wise, calm, natural
+- conversational and human
+- elegant but easy to understand
+- emotionally reassuring without sounding robotic
+- no labels like "AI:" or "Answer:"
+- no bullet points
+- no disclaimers
+- no mention of source text, prompt, system, hidden rules, or reasoning
+
+Important writing behavior:
+- Vary your sentence rhythm naturally from one reply to another.
+- Do not always begin in the same way.
+- Sometimes be gentle and direct, sometimes more lyrical, sometimes more grounded and practical.
+- Keep the tone aligned with the user's question and the omen.
+- Sound like the examples: thoughtful, flowing, natural, and personal.
+- Avoid repeating stock phrases every time.
+
+Translation behavior:
+- If the user asks to translate, translate the previous reading faithfully into the requested language.
+- Do not reinterpret or expand during translation.
+
+Current Lot Number: {lot_number}
+Grade: {grade}
+Interpretation (English): {interpretation_en}
+Interpretation (Chinese): {interpretation_zh}
+
+Conversation so far:
+{history_text if history_text else "No previous conversation."}
+
+Latest user message:
+{question}
+
+Lot context:
+{lot_context_line}
+
+Instructions:
+- If this is a follow-up question, continue the same reading naturally.
+- If the omen is favorable, explain the opening and what action supports it.
+- If the omen is mixed or difficult, explain it gently and give wise next steps.
+- Keep the reading practical, emotionally comforting, and natural.
+- End with a short closing line of guidance or blessing.
+- If the user writes in English, answer in English.
+- If the user writes in Chinese, answer in Chinese.
+- Keep the reply concise but complete, usually around 90 to 170 words.
+""".strip()
+
+
+def call_openai(prompt: str):
+    if MODEL_PROVIDER != "openai":
+        raise RuntimeError("MODEL_PROVIDER must be 'openai'.")
+
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is missing.")
+
+    response = requests.post(
+        "https://api.openai.com/v1/responses",
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": MODEL_NAME,
+            "input": prompt
+        },
+        timeout=60
+    )
+    response.raise_for_status()
+
+    data_json = response.json()
+    return data_json["output"][0]["content"][0]["text"]
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -118,20 +262,44 @@ def home():
         return HTMLResponse(f.read())
 
 
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "provider": MODEL_PROVIDER,
+        "model": MODEL_NAME
+    }
+
+
 @app.get("/paynow-qr")
-def paynow():
+def paynow_qr():
     return FileResponse("PayNow.jpeg")
 
 
 @app.get("/paylah-qr")
-def paylah():
+def paylah_qr():
     return FileResponse("PayLah.jpeg")
 
 
+@app.post("/new-reading")
+def new_reading(body: SessionBody):
+    session_id = body.session_id
+    if not session_id:
+        return {"ok": True}
+
+    session = get_session(session_id)
+    session["history"] = []
+    session["current_lot"] = None
+    session["last_answer"] = ""
+
+    return {"ok": True, "session_id": session_id}
+
+
 @app.post("/unlock")
-def unlock(body: UnlockBody):
+def unlock(body: SessionBody):
     session_id = body.session_id or str(uuid.uuid4())
     session = get_session(session_id)
+
     session["paid"] += 10
 
     data = load_knowledge()
@@ -147,55 +315,104 @@ def unlock(body: UnlockBody):
 
 @app.post("/ask")
 def ask(body: AskBody):
-    data = load_knowledge()
-    free_limit = data["free_limit"]
+    try:
+        data = load_knowledge()
+        free_limit = data["free_limit"]
+        instruction_text = data.get(
+            "instruction_text",
+            "Ask your question below. Please include the lot number (choose between 1-100), for example: How is my work fortune for this week? Lot 12 or 我这周的运势如何？ 第12签。"
+        )
 
-    session_id = body.session_id or str(uuid.uuid4())
-    session = get_session(session_id)
+        session_id = body.session_id or str(uuid.uuid4())
+        session = get_session(session_id)
 
-    used = session["used"]
-    total_allowed = free_limit + session["paid"]
+        used = session["used"]
+        total_allowed = free_limit + session["paid"]
 
-    if used >= total_allowed:
-        return JSONResponse({
-            "ok": False,
-            "message": "Your reading limit is reached. Please unlock more questions.",
-            "session_id": session_id,
-            "remaining": 0
+        if used >= total_allowed:
+            return JSONResponse({
+                "ok": False,
+                "message": "Your reading limit is reached. Please unlock more questions.",
+                "session_id": session_id,
+                "remaining": 0
+            })
+
+        question = body.question.strip()
+        question_lang = detect_language(question)
+
+        translation_target = is_translation_request(question)
+        if translation_target and session.get("last_answer"):
+            prompt = build_translation_prompt(translation_target, session["last_answer"])
+            result = call_openai(prompt)
+
+            session["history"].append({
+                "q": question,
+                "a": result
+            })
+            session["history"] = session["history"][-12:]
+            session["last_answer"] = result
+            session["last_language"] = translation_target
+            session["used"] += 1
+
+            return {
+                "ok": True,
+                "answer": result,
+                "session_id": session_id,
+                "remaining": total_allowed - session["used"]
+            }
+
+        lots = data.get("divination_lots", [])
+        lot_number = extract_lot_number(question)
+
+        lot = None
+        explicit_lot_in_message = False
+
+        if lot_number:
+            lot = find_lot_by_number(lot_number, lots)
+            if lot:
+                session["current_lot"] = lot
+                explicit_lot_in_message = True
+        else:
+            lot = session.get("current_lot")
+
+        if not lot:
+            return {
+                "ok": True,
+                "answer": instruction_text,
+                "session_id": session_id,
+                "remaining": total_allowed - used
+            }
+
+        history_text = format_history(session["history"], max_turns=8)
+
+        prompt = build_reading_prompt(
+            question=question,
+            lot=lot,
+            system_style=data["system_style"],
+            history_text=history_text,
+            explicit_lot_in_message=explicit_lot_in_message
+        )
+
+        result = call_openai(prompt)
+
+        session["history"].append({
+            "q": question,
+            "a": result
         })
+        session["history"] = session["history"][-12:]
+        session["last_answer"] = result
+        session["last_language"] = question_lang
+        session["used"] += 1
 
-    lots = data["divination_lots"]
-    lot_number = extract_lot_number(body.question)
-
-    lot = None
-
-    if lot_number:
-        lot = find_lot(lot_number, lots)
-        if lot:
-            session["current_lot"] = lot
-    else:
-        lot = session.get("current_lot")
-
-    if not lot:
         return {
             "ok": True,
-            "answer": "Ask your question below. Please include the lot number (choose between 1-100), for example: How is my work fortune for this week? Lot 12 or 我这周的运势如何？ 第12签。",
+            "answer": result,
             "session_id": session_id,
-            "remaining": total_allowed - used
+            "remaining": total_allowed - session["used"]
         }
 
-    answer = generate_fortune_response(lot, body.question, session["history"])
-
-    session["history"].append({
-        "q": body.question,
-        "a": answer
-    })
-    session["history"] = session["history"][-10:]
-    session["used"] += 1
-
-    return {
-        "ok": True,
-        "answer": answer,
-        "session_id": session_id,
-        "remaining": total_allowed - session["used"]
-    }
+    except Exception:
+        return JSONResponse({
+            "ok": False,
+            "message": "Something went wrong. Please try again shortly."
+        }, status_code=500)
